@@ -140,7 +140,7 @@ def create_offsets_df(spark: SparkSession, total_pages: int) -> DataFrame:
 
 @F.udf(returnType=T.StringType())
 def fetch_data(page: int, location: str,
-               period: str, url: str, headers: dict) -> str:
+               period: str, url: str, key: str, host: str, cnt_type: str) -> str:
     """
     Fetches data from the API for a specific page number, location, and period.
 
@@ -159,6 +159,7 @@ def fetch_data(page: int, location: str,
         "location": location,
         "soldInLast": period
     }
+    headers = {"x-rapidapi-key": key, "x-rapidapi-host": host, "Content-Type": cnt_type}
     response = requests.post(url=url, json=params, headers=headers)
     response.raise_for_status()
     return response.text
@@ -184,13 +185,19 @@ def create_dataframe(spark: SparkSession,
     total_pages = check_total_pages(config, location, period)
     offsets_df = create_offsets_df(spark, total_pages)
 
-    url = config["url"]
-    headers = config["headers"]
+    url = config.get("url")
+    key = config["headers"]["x-rapidapi-key"]
+    host = config["headers"]["x-rapidapi-host"]
+    cnt_type = config["headers"]["Content-Type"]
 
     response_df = offsets_df\
         .withColumn("response",
                     fetch_data("page", F.lit(location),
-                               F.lit(period), F.lit(url), F.lit(json.dumps(headers))))\
+                               F.lit(period),
+                               F.lit(url),
+                               F.lit(key),
+                               F.lit(host),
+                               F.lit(cnt_type)))\
         .withColumn("parsed_response", F.from_json(F.col("response"), schema))
 
     return response_df
@@ -202,6 +209,7 @@ config = load_config()
 
 df = create_dataframe(spark, config, "Philadelphia, PA", "1w")
 
+df.write.mode("overwrite").json("test.json")
 
-if __name__ == "__main__":
-    pass
+# if __name__ == "__main__":
+#     pass
